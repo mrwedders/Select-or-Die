@@ -21,6 +21,14 @@
     $.fn.selectOrDie = function (method) {
 
         var $defaults = {
+                multiSelect:       false,     // Makes this a multi select
+                noFilterTimeout:   false,     // Disables the timeout that clears the filter string 
+                fuzzyFilter:       false,     // Allows filtering to match anywhere in <option> text, rather than just the
+                                              // start
+                visualFilter:     
+                                   false,     // Whether a search box is show on activation, and options are shown/hidden
+                                              // as a search string is typed
+
                 customID:          null,      // String  - "" by default - Adds an ID to the SoD
                 customClass:       "",        // String  - "" by default - Adds a class to the SoD
                 placeholder:       null,      // String  - "" by default - Adds a placeholder that will be shown before a selection has been made
@@ -60,6 +68,9 @@
                             $settingsStripEmpty        = $select.data("strip-empty") ? $select.data("strip-empty") : $_settings.stripEmpty,
                             $selectTitle               = $select.prop("title") ? $select.prop("title") : null,
                             $selectDisabled            = $select.is(":disabled") ? " disabled" : "",
+                            $visualFilter              = ($select.data("visual-filter") ? true : $_settings.visualFilter),
+                            $fuzzyFilter               = ($select.data("fuzzy-filter") ? true : $_settings.fuzzyFilter),
+                            $multiSelect               = ($select.prop("multiple") ? true : $_settings.multiSelect),
                             $sodPrefix                 = "",
                             $sodHtml                   = "",
                             $sodHeight                 = 0,
@@ -76,6 +87,11 @@
                         }
                         else {
                             $sodHtml += "<span class=\"sod_label\">" + $sodPrefix + "</span>";
+                        }
+
+                        // If this is a multi-select, make sure the native input is too
+                        if ($multiSelect) {
+                          $select.prop("multiple", true);
                         }
 
                         // Inserts a new element that will act like our new <select>
@@ -98,6 +114,20 @@
                         if ( _private.isTouch() ) {
                             $sod.addClass("touch");
                         }
+                        
+                        if ($visualFilter) {
+                          $sod.append(
+                            $("<div>", {
+                              "class":      "sod_filter_box_wrapper"
+                            }).append(
+                              $("<input>", {
+                                "class":        "sod_filter_box",
+                                type:           "text",
+                                disabled:       "disabled"
+                              })
+                            )
+                          );
+                        }
 
                         // Add a wrapper for the option list
                         $sodListWrapper = $("<span/>", {
@@ -108,6 +138,13 @@
                         $sodList = $("<span/>", {
                             "class": "sod_list"
                         }).appendTo($sodListWrapper);
+
+                        $sodList.append(
+                          $("<span>", {
+                            "class": "sod_option no_results hidden"
+                          })
+                          .text("No results!")
+                        );
 
                         // Inserts an option <span> for each <option>
                         $("option, optgroup", $select).each(function (i) {
@@ -274,7 +311,7 @@
                     }
 
                     // Scroll list to selected item
-                    _private.listScroll($sodList, $optionSelected);
+                    _private.listScroll($sodList, $optionSelected.first());
 
                     // Check if the option list fits in the viewport
                     _private.checkViewport($sod, $sodList);
@@ -282,7 +319,7 @@
                 else {
                     // Clears viewport check timeout
                     clearTimeout($_sodViewportTimeout);
-                    $sod.removeClass("open");
+                    _private.closeSod($sod);
 
                     // If a placeholder is set, make sure the placeholder text is removed if
                     // the user toggles the select using his mouse
@@ -358,17 +395,46 @@
                     clearTimeout($_sodFilterTimeout);
 
                     // Append the data-filter with typed character
-                    $sod.data("filter", $sod.data("filter") + String.fromCharCode(e.which));
+                    var searchStr = $sod.data("filter");
+
+                    // Backspace!
+                    if (e.which == 8) {
+                      searchStr = searchStr.substring(0, (searchStr.length || 1) - 1);
+                    } else {
+                      searchStr += String.fromCharCode(e.which).toUpperCase();
+                    }
+                    searchStr = $.trim(searchStr);
+                    $sod.data("filter", searchStr)
+                      .find(".sod_filter_box").val(searchStr);
 
                     // Check for matches of the typed string
                     $sodFilterHit = $sodOptions.filter(function() {
-                        return $(this).text().toLowerCase().indexOf($sod.data("filter").toLowerCase()) === 0;
-                    }).not(".disabled, .optgroup").first();
+                      var index = $(this).text().toUpperCase().indexOf(searchStr);
+                      var matches;
+                      if (!searchStr || !searchStr.match(/\w/is)) {
+                        matches = true;
+                      } else {
+                        matches = (
+                          $_settings.fuzzyFilter ?
+                            index !== -1
+                            :
+                            index === 0);
+                      }
+
+                      // console.log("'", $(this).text().toUpperCase(), "' has", (matches ? "" : " not"), " matched '", searchStr, "'" );
+
+                      if ($_settings.visualFilter) {
+                        if ($(this).hasClass("hidden") === matches) {
+                          $(this)[(matches ? "remove" : "add") + "Class"]("hidden");
+                        }
+                      }
+                      return matches;
+                    }).not(".disabled, .optgroup, .no_results");
 
                     // If the typed value is a hit, then set it to active
                     if ( $sodFilterHit.length ) {
                         $optionActive.removeClass("active");
-                        $sodFilterHit.addClass("active");
+                        $sodFilterHit.first().addClass("active");
                         _private.listScroll($sodList, $sodFilterHit);
                         $sodLabel.get(0).lastChild.nodeValue = $sodFilterHit.text();
 
@@ -377,10 +443,15 @@
                         }
                     }
 
+                    // Hide the no results alert
+                    $sod.find(".no_results")[($sodFilterHit.length ? "add" : "remove") + "Class"]("hidden");
+
                     // Set a timeout to empty the data-filter
-                    $_sodFilterTimeout = setTimeout( function() {
-                        $sod.data("filter", "");
+                  if (!$_settings.noFilterTimeout) {
+                    $_sodFilterTimeout = setTimeout(function () {
+                      $sod.data("filter", "");
                     }, 500);
+                  }
                 }
             }, // keyboardUse
 
@@ -389,19 +460,28 @@
                 var $option = $(this);
 
                 // Mousemove event on option to make the SoD behave just like a native select
-                if ( !$option.hasClass("disabled") && !$option.hasClass("optgroup") ) {
+                if ( !$option[0].className.match(/\b(disabled|optgroup|no_results)\b/) ) {
                     $option.siblings().removeClass("active").end().addClass("active");
                 }
             }, // optionHover
 
+
+            getOptionsString: function ($sodOptions) {
+                if ($sodOptions.length > 1)
+                    $sodOptions = $sodOptions.not(":disabled").not(".disabled");
+
+                return $.map($sodOptions, function (obj) {
+                        return $(obj).text();
+                    })
+                    .join(", ");
+            },
 
             optionClick: function (e) {
                 e.stopPropagation();
 
                 var $clicked        = $(this),
                     $sod            = $clicked.closest(".sod_select"),
-                    $optionDisabled = $clicked.hasClass("disabled"),
-                    $optionOptgroup = $clicked.hasClass("optgroup"),
+                    $ignoreOption   = $clicked[0].className.match(/\b(disabled|optgroup|no_results)\b/),
                     $optionIndex    = $sod.find(".sod_option:not('.optgroup')").index(this);
 
                 // Fixes https://github.com/vestman/Select-or-Die/issues/8, thanks builtbylane
@@ -410,26 +490,40 @@
                 }
 
                 // If not disabled or optgroup
-                if ( !$optionDisabled && !$optionOptgroup ) {
-                    $sod.find(".selected, .sod_placeholder").removeClass("selected sod_placeholder");
-                    $clicked.addClass("selected");
-                    $sod.find("select option")[$optionIndex].selected = true;
+                if ( !$ignoreOption ) {
+                    $sod.find(".sod_placeholder").removeClass("sod_placeholder");
+                    var $selected = $sod.find(".selected").not($clicked);
+                    var $nativeOption = $sod.find("select option:nth-child(" + $optionIndex + ")");
+                    var isSelected = $nativeOption.prop("selected");
+
+                    if (!$_settings.multiSelect && !isSelected && $selected.length > 1) {
+                        $selected.removeClass("selected");
+                        $selected = [];
+                    }
+
+                    if ($selected.length || !isSelected) {
+                        $nativeOption.prop("selected", !isSelected);
+                        $clicked[(isSelected ? "remove" : "add") + "Class"]("selected");
+                    }
+
                     $sod.find("select").change();
                 }
 
                 // Clear viewport check timeout
                 clearTimeout($_sodViewportTimeout);
 
-                // Hide the list
-                $sod.removeClass("open");
+                if (!$_settings.multiSelect) {
+                  // Hide the list
+                  _private.closeSod($sod);
+                }
             }, // optionClick
 
 
             selectChange: function () {
-                var $select         = $(this),
-                    $optionSelected = $select.find(":selected"),
-                    $optionText     = $optionSelected.text(),
-                    $sod            = $select.closest(".sod_select");
+                var $select          = $(this),
+                    $optionsSelected = $select.find(":selected"),
+                    $optionText      = _private.getOptionsString($optionsSelected),
+                    $sod             = $select.closest(".sod_select");
 
                 $sod.find(".sod_label").get(0).lastChild.nodeValue = $optionText;
                 $sod.data("label", $optionText);
@@ -438,11 +532,13 @@
                 $_settings.onChange.call(this);
 
                 // If $_settings.links, send the user to the URL
-                if ( ($sod.data("links") || $optionSelected.data("link")) && !$optionSelected.data("link-external") ) {
-                    window.location.href = $optionSelected.val();
+                if ( ($sod.data("links") || $optionsSelected.data("link")) && !$optionsSelected.data("link-external") ) {
+                    window.location.href = $optionsSelected.first().val();
                 }
-                else if ( $sod.data("links-external") || $optionSelected.data("link-external") ) {
-                    window.open($optionSelected.val(),"_blank");
+                else if ( $sod.data("links-external") || $optionsSelected.data("link-external") ) {
+                    $optionsSelected.each(function () {
+                        window.open($(this).val(), "_blank");
+                    });
                 }
             }, // selectChange
 
@@ -470,8 +566,9 @@
                         $optionSelected.addClass("active");
                     }
 
-                    if ( !$optionHasChanged && $sodPlaceholder ) {
-                        $sod.find(".sod_label").get(0).lastChild.nodeValue = $optionSelected.text();
+                    var labelString = _private.getOptionsString($optionSelected);
+                    if ( (!$optionHasChanged || $optionSelected.length) && $sodPlaceholder ) {
+                        $sod.find(".sod_label").get(0).lastChild.nodeValue = labelString;
                     } else if ( !$optionHasChanged ) {
                         $sod.find(".sod_label").get(0).lastChild.nodeValue = $sodLabel;
                     }
@@ -481,7 +578,8 @@
                     $_sodKeysWhenClosed = false;
 
                     // Remove open/focus class
-                    $sod.removeClass("open focus");
+                    $sod.removeClass("focus");
+                    _private.closeSod($sod);
 
                     // Blur the SOD
                     $sod.blur();
@@ -491,6 +589,20 @@
                 }
             }, // blurSod
 
+            closeSod: function ($sod) {
+              $sod
+                .removeClass("open")
+                .data("filter", "")
+                .each(function () {
+                  $(this).find(".sod_option.hidden").removeClass("hidden");
+                })
+                .each(function () {
+                  $(this).find(".sod_option.no_results").addClass("hidden");
+                })
+                .each(function () {
+                  $(this).find(".sod_filter_box").val("");
+                });
+            },
 
             checkViewport: function ($sod, $sodList) {
                 var $sodPosition   = $sod[0].getBoundingClientRect(),
