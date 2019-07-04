@@ -19,7 +19,6 @@
     "use strict";
 
     $.fn.selectOrDie = function (method) {
-
         var $defaults = {
                 multiSelect:       false,     // Makes this a multi select
                 noFilterTimeout:   false,     // Disables the timeout that clears the filter string 
@@ -139,12 +138,14 @@
                             "class": "sod_list"
                         }).appendTo($sodListWrapper);
 
-                        $sodList.append(
-                          $("<span>", {
-                            "class": "sod_option no_results hidden"
-                          })
-                          .text("No results!")
-                        );
+                        if ($visualFilter) {
+                            $sodList.append(
+                                $("<span>", {
+                                    "class": "sod_option no_results hidden"
+                                })
+                                .text("No results!")
+                            );
+                        }
 
                         // Inserts an option <span> for each <option>
                         $("option, optgroup", $select).each(function (i) {
@@ -421,8 +422,6 @@
                             index === 0);
                       }
 
-                      // console.log("'", $(this).text().toUpperCase(), "' has", (matches ? "" : " not"), " matched '", searchStr, "'" );
-
                       if ($_settings.visualFilter) {
                         if ($(this).hasClass("hidden") === matches) {
                           $(this)[(matches ? "remove" : "add") + "Class"]("hidden");
@@ -436,7 +435,7 @@
                         $optionActive.removeClass("active");
                         $sodFilterHit.first().addClass("active");
                         _private.listScroll($sodList, $sodFilterHit);
-                        $sodLabel.get(0).lastChild.nodeValue = $sodFilterHit.text();
+                        $sodLabel.get(0).lastChild.nodeValue = _private.getOptionsString($sodFilterHit);
 
                         if ( !$sod.hasClass("open") ) {
                             $_sodKeysWhenClosed = true;
@@ -467,8 +466,11 @@
 
 
             getOptionsString: function ($sodOptions) {
-                if ($sodOptions.length > 1)
+                if ($sodOptions.length > 1) {
                     $sodOptions = $sodOptions.not(":disabled").not(".disabled");
+                    if (!$_settings.multiSelect) 
+                        $sodOptions = $sodOptions.first(); 
+                }
 
                 return $.map($sodOptions, function (obj) {
                         return $(obj).text();
@@ -479,10 +481,14 @@
             optionClick: function (e) {
                 e.stopPropagation();
 
-                var $clicked        = $(this),
-                    $sod            = $clicked.closest(".sod_select"),
-                    $ignoreOption   = $clicked[0].className.match(/\b(disabled|optgroup|no_results)\b/),
-                    $optionIndex    = $sod.find(".sod_option:not('.optgroup')").index(this);
+                var bannedClassRegex    = new RegExp("\\b(disabled|optgroup|no_results)\\b"),
+                    $clicked            = $(this),
+                    $sod                = $clicked.closest(".sod_select"),
+                    $ignoreOption       = bannedClassRegex.test(this.className),
+                    $options = $sod.find(".sod_option").filter(function () {
+                        return !bannedClassRegex.test(this.className);
+                    }),
+                    $optionIndex        = $options.index(this);
 
                 // Fixes https://github.com/vestman/Select-or-Die/issues/8, thanks builtbylane
                 if ( $sod.hasClass("touch") ) {
@@ -493,15 +499,15 @@
                 if ( !$ignoreOption ) {
                     $sod.find(".sod_placeholder").removeClass("sod_placeholder");
                     var $selected = $sod.find(".selected").not($clicked);
-                    var $nativeOption = $sod.find("select option:nth-child(" + $optionIndex + ")");
+                    var $nativeOption = $($sod.find("select option")[$optionIndex]);
                     var isSelected = $nativeOption.prop("selected");
 
-                    if (!$_settings.multiSelect && !isSelected && $selected.length > 1) {
+                    if (!$_settings.multiSelect && $selected.length && !isSelected) {
                         $selected.removeClass("selected");
                         $selected = [];
                     }
 
-                    if ($selected.length || !isSelected) {
+                    if ($_settings.multiSelect || (!$selected.length && !isSelected)) {
                         $nativeOption.prop("selected", !isSelected);
                         $clicked[(isSelected ? "remove" : "add") + "Class"]("selected");
                     }
