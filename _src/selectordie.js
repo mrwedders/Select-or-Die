@@ -18,15 +18,16 @@
 ; (function ($) {
     "use strict";
 
+    var $_sodExcludeClasses = /\b(disabled|optgroup|no_results|is_placeholder)\b/;
+
     $.fn.selectOrDie = function (method) {
         var $defaults = {
                 multiSelect:       false,     // Makes this a multi select
                 noFilterTimeout:   false,     // Disables the timeout that clears the filter string 
                 fuzzyFilter:       false,     // Allows filtering to match anywhere in <option> text, rather than just the
-                                              // start
-                visualFilter:     
-                                   false,     // Whether a search box is show on activation, and options are shown/hidden
-                                              // as a search string is typed
+                                              //     start
+                visualFilter:      false,     // Whether a search box is show on activation, and options are shown/hidden
+                                              //     as a search string is typed
 
                 customID:          null,      // String  - "" by default - Adds an ID to the SoD
                 customClass:       "",        // String  - "" by default - Adds a class to the SoD
@@ -121,8 +122,7 @@
                             }).append(
                               $("<input>", {
                                 "class":        "sod_filter_box",
-                                type:           "text",
-                                disabled:       "disabled"
+                                type:           "text"
                               })
                             )
                           );
@@ -233,7 +233,7 @@
                         $sod.data("label", $optionText);
                         $sod.data("placeholder", $optionText);
                         $option.prop("disabled", true);
-                        $sodList.find(".sod_option:last").addClass("is-placeholder disabled");
+                        $sodList.find(".sod_option:last").addClass("is_placeholder disabled");
 
                         if ( $optionIsSelected ) {
                             $sodLabel.addClass("sod_placeholder");
@@ -316,8 +316,7 @@
 
                     // Check if the option list fits in the viewport
                     _private.checkViewport($sod, $sodList);
-                }
-                else {
+                } else {
                     // Clears viewport check timeout
                     clearTimeout($_sodViewportTimeout);
                     _private.closeSod($sod);
@@ -340,17 +339,18 @@
                     $optionActive   = $sodOptions.filter(".active"),
                     $sodFilterHit, $optionNext, $optionCycle;
 
+                var not = ":not('.disabled, .optgroup, .is_placeholder, .no_results, .hidden')";
+
                 // Highlight prev/next element if up/down key pressed
                 if ( e.which > 36 && e.which < 41 ) {
-
                     // Set $optionNext and $optionCycle
                     if ( e.which === 37 || e.which === 38 ) { // Left/Up key
-                        $optionNext  = $optionActive.prevAll(":not('.disabled, .optgroup')").first();
-                        $optionCycle = $sodOptions.not(".disabled, .optgroup").last();
+                        $optionNext  = $optionActive.prevAll(not).first();
+                        $optionCycle = $sodOptions.not(not).last();
                     }
                     else if ( e.which === 39 || e.which === 40 ) { // Right/Down key
-                        $optionNext  = $optionActive.nextAll(":not('.disabled, .optgroup')").first();
-                        $optionCycle = $sodOptions.not(".disabled, .optgroup").first();
+                        $optionNext  = $optionActive.nextAll(not).first();
+                        $optionCycle = $sodOptions.not(not).first();
                     }
 
                     // If there's no option before/after and cycle is enabled
@@ -367,10 +367,12 @@
 
                         // If the user used his keys when the SoD was closed we'll
                         // update the $_sodKeysWhenClosed flag that we use in blurSod()
-                        if ( !$sod.hasClass("open") ) {
+                        if (!$sod.hasClass("open")) {
                             $_sodKeysWhenClosed = true;
                             // $sod.data("closed-keys", true);
                         }
+
+                        $sod.addClass("open");
 
                     }
 
@@ -390,8 +392,11 @@
                     _private.blurSod($sod);
                 }
 
+                // Return on non-char keys
+                if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey || !e.char) return;
+
                 // "Filter" options list using keybaord based input
-                if ( e.which !== 0) {
+                if (e.which !== 0) {
                     // Clears data-filter timeout
                     clearTimeout($_sodFilterTimeout);
 
@@ -406,13 +411,14 @@
                     }
                     searchStr = $.trim(searchStr);
                     $sod.data("filter", searchStr)
-                      .find(".sod_filter_box").val(searchStr);
+                      .find(".sod_filter_box")
+                      .val(searchStr);
 
                     // Check for matches of the typed string
                     $sodFilterHit = $sodOptions.filter(function() {
                       var index = $(this).text().toUpperCase().indexOf(searchStr);
                       var matches;
-                      if (!searchStr || !searchStr.match(/\w/is)) {
+                      if (!searchStr || !searchStr.match(/\w/i)) {
                         matches = true;
                       } else {
                         matches = (
@@ -428,7 +434,7 @@
                         }
                       }
                       return matches;
-                    }).not(".disabled, .optgroup, .no_results");
+                    }).not(not);
 
                     // If the typed value is a hit, then set it to active
                     if ( $sodFilterHit.length ) {
@@ -452,6 +458,10 @@
                     }, 500);
                   }
                 }
+
+                e.stopPropagation();
+                e.preventDefault();
+                return false;
             }, // keyboardUse
 
 
@@ -459,7 +469,7 @@
                 var $option = $(this);
 
                 // Mousemove event on option to make the SoD behave just like a native select
-                if ( !$option[0].className.match(/\b(disabled|optgroup|no_results)\b/) ) {
+                if ( !$option[0].className.match($_sodExcludeClasses) ) {
                     $option.siblings().removeClass("active").end().addClass("active");
                 }
             }, // optionHover
@@ -481,12 +491,11 @@
             optionClick: function (e) {
                 e.stopPropagation();
 
-                var bannedClassRegex    = new RegExp("\\b(disabled|optgroup|no_results)\\b"),
-                    $clicked            = $(this),
+                var $clicked            = $(this),
                     $sod                = $clicked.closest(".sod_select"),
-                    $ignoreOption       = bannedClassRegex.test(this.className),
+                    $ignoreOption       = $_sodExcludeClasses.test(this.className),
                     $options = $sod.find(".sod_option").filter(function () {
-                        return !bannedClassRegex.test(this.className);
+                        return !$_sodExcludeClasses.test(this.className);
                     }),
                     $optionIndex        = $options.index(this);
 
@@ -529,9 +538,10 @@
                 var $select          = $(this),
                     $optionsSelected = $select.find(":selected"),
                     $optionText      = _private.getOptionsString($optionsSelected),
-                    $sod             = $select.closest(".sod_select");
+                    $sod             = $select.closest(".sod_select"),
+                    $sodPlaceholder  = $sod.data("placeholder");
 
-                $sod.find(".sod_label").get(0).lastChild.nodeValue = $optionText;
+                $sod.find(".sod_label").get(0).lastChild.nodeValue = $optionText || $sodPlaceholder;
                 $sod.data("label", $optionText);
 
                 // Triggers the onChange callback
@@ -574,7 +584,7 @@
 
                     var labelString = _private.getOptionsString($optionSelected);
                     if ( (!$optionHasChanged || $optionSelected.length) && $sodPlaceholder ) {
-                        $sod.find(".sod_label").get(0).lastChild.nodeValue = labelString;
+                        $sod.find(".sod_label").get(0).lastChild.nodeValue = labelString || $sodPlaceholder;
                     } else if ( !$optionHasChanged ) {
                         $sod.find(".sod_label").get(0).lastChild.nodeValue = $sodLabel;
                     }

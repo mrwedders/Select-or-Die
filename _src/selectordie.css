@@ -101,11 +101,11 @@
       top:0;left:0;right:0;bottom:0;
       border:0;
       background:#fff;
+      cursor:pointer;
     }
 
     .sod_select .sod_filter_box_wrapper .sod_filter_box {
       padding: 10px 40px 10px 10px;
-
     }
 
       .sod_filter_box_wrapper:after {
@@ -210,14 +210,8 @@
                 /* Children of an optgroup */
                 .sod_select .sod_option.groupchild { padding-left: 20px; }
 
-              .sod_select .sod_option.no_results {
-                color: #fff;
-                font-weight:bold;
-                background:rgb(255, 120, 120);
-              }
-
             /* Used together with placeholderOption / data-placeholder-option */
-            .sod_select .sod_option.is-placeholder {
+            .sod_select .sod_option.is_placeholder {
                 display: none;
             }
 
@@ -234,6 +228,12 @@
                     background: #f7f7f7;
                     color: #333333;
                 }
+            
+            .sod_select .sod_option.no_results {
+                color: #fff;
+                font-weight:bold;
+                background:rgb(255, 120, 120);
+              }
               
             .sod_select .sod_option.hidden 
                 {
